@@ -1,0 +1,9 @@
+applications:
+- name: librdkafka-demo-app-cloudfoundry
+  buildpack: https://github.com/cloudfoundry/multi-buildpack
+  instances: 1
+  memory: 128M
+  disk_quota: 1G
+  stack: cflinuxfs2
+  env:
+    GOPACKAGENAME: librdkafka-demo-app-cloudfoundry
