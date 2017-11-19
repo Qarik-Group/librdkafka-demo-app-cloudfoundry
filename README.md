@@ -34,9 +34,9 @@ buildpacks:
 To deploy this example app against Stark & Wayne Kafka, run:
 
 ```
-cf create-service starkandwayne-kafka topic sample-topic
+cf create-service starkandwayne-kafka topic status-topic
 cf push librdkafka-demo-app-cloudfoundry --no-start
-cf bind-service librdkafka-demo-app-cloudfoundry sample-topic
+cf bind-service librdkafka-demo-app-cloudfoundry status-topic
 cf restart librdkafka-demo-app-cloudfoundry
 cf logs librdkafka-demo-app-cloudfoundry
 ```

@@ -4,61 +4,83 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/cloudfoundry-community/go-cfenv"
 	"github.com/confluentinc/confluent-kafka-go/kafka"
 )
 
 func webHandlerRoot(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprintf(w, "Hi there, I love %s!", r.URL.Path[1:])
+	fmt.Fprintf(w, "Hi there!")
 }
 
 func main() {
 	cfApp, err := cfenv.Current()
-	statusHostname := "localhost:9092"
-	statusTopicName := "opencv-kafka-demo-status"
+	kafkaHostname := "localhost:9092"
+	kafkaTopicName := "opencv-kafka-demo-status"
 	if err == nil {
-		statusTopicService, err := cfApp.Services.WithName("status-topic")
+		services, err := cfApp.Services.WithTag("kafka")
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Cannot find service name 'status-topic': %v", err)
+			fmt.Fprintf(os.Stderr, "Cannot find service with label 'kafka': %v", err)
 			os.Exit(1)
 		}
-		statusHostname, _ = statusTopicService.CredentialString("hostname")
-		statusTopicName, _ = statusTopicService.CredentialString("topicName")
+		kafkaService := services[0]
+		kafkaHostname, _ = kafkaService.CredentialString("hostname")
+		kafkaTopicName, _ = kafkaService.CredentialString("topicName")
 	} else {
-		fmt.Fprintf(os.Stderr, "Not running inside Cloud Foundry. Assume local Kafka on localhost:9092")
+		fmt.Fprintf(os.Stderr, "Not running inside Cloud Foundry. Assume local Kafka on localhost:9092\n")
 	}
 
-	statusP, err := kafka.NewProducer(&kafka.ConfigMap{"bootstrap.servers": statusHostname})
+	consumer, err := kafka.NewConsumer(&kafka.ConfigMap{
+		"bootstrap.servers":    kafkaHostname,
+		"group.id":             "librdkafka-demo-app-cloudfoundry",
+		"session.timeout.ms":   6000,
+		"default.topic.config": kafka.ConfigMap{"auto.offset.reset": "earliest"}})
 	if err != nil {
-		fmt.Printf("Failed to create 'status-topic' producer: %s\n", err)
+		fmt.Printf("Failed to create consumer: %s\n", err)
 		os.Exit(1)
 	}
 
-	fmt.Printf("Created 'static-topic' producer %v\n", statusP)
+	fmt.Printf("Created Kafka consumer %v\n", consumer)
 
-	// Optional delivery channel, if not specified the Producer object's
-	// .Events channel is used.
-	deliveryChan := make(chan kafka.Event)
+	sigchan := make(chan os.Signal, 1)
+	signal.Notify(sigchan, syscall.SIGINT, syscall.SIGTERM)
+	err = consumer.SubscribeTopics([]string{kafkaTopicName}, nil)
 
-	value := "{\"status\":\"starting\", \"client\": \"posted_images_to_kafka\", \"language\": \"golang\"}"
-	err = statusP.Produce(&kafka.Message{TopicPartition: kafka.TopicPartition{Topic: &statusTopicName, Partition: kafka.PartitionAny}, Value: []byte(value)}, deliveryChan)
-	if err != nil {
-		fmt.Printf("Failed .Produce for'status-topic' message: %s\n", err)
+	go func() {
+		run := true
+
+		for run == true {
+			select {
+			case sig := <-sigchan:
+				fmt.Printf("Caught signal %v: terminating\n", sig)
+				run = false
+			default:
+				ev := consumer.Poll(100)
+				if ev == nil {
+					continue
+				}
+
+				switch e := ev.(type) {
+				case *kafka.Message:
+					fmt.Printf("%% Message on %s:\n%s\n",
+						e.TopicPartition, string(e.Value))
+				case kafka.PartitionEOF:
+					fmt.Printf("%% Reached %v\n", e)
+				case kafka.Error:
+					fmt.Fprintf(os.Stderr, "%% Error: %v\n", e)
+					run = false
+				default:
+					fmt.Printf("Ignored %v\n", e)
+				}
+			}
+		}
+
+		fmt.Printf("Closing consumer\n")
+		consumer.Close()
 		os.Exit(1)
-	}
-
-	e := <-deliveryChan
-	m := e.(*kafka.Message)
-
-	if m.TopicPartition.Error != nil {
-		fmt.Printf("Delivery failed: %v\n", m.TopicPartition.Error)
-	} else {
-		fmt.Printf("Delivered message to topic %s [%d] at offset %v\n",
-			*m.TopicPartition.Topic, m.TopicPartition.Partition, m.TopicPartition.Offset)
-	}
-
-	close(deliveryChan)
+	}()
 
 	http.HandleFunc("/", webHandlerRoot)
 	port := os.Getenv("PORT")
