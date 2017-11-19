@@ -38,5 +38,19 @@ cf create-service starkandwayne-kafka topic status-topic
 cf push librdkafka-demo-app-cloudfoundry --no-start
 cf bind-service librdkafka-demo-app-cloudfoundry status-topic
 cf restart librdkafka-demo-app-cloudfoundry
+cf logs librdkafka-demo-app-cloudfoundry --recent
 cf logs librdkafka-demo-app-cloudfoundry
+```
+
+
+During the `cf push` staging process, Cloud Foundry will register the Confluent Apt repository and the install packages. Your output will include the following:
+
+```
+  -----> Adding apt keys
+  -----> Apt Buildpack version 0.1.1
+  gpg: key 41468433: public key "Confluent Packaging <packages@confluent.io>" imported
+  gpg: Total number processed: 1
+  gpg:               imported: 1  (RSA: 1)
+  -----> Updating apt cache
+  -----> Adding apt repos
 ```
