@@ -6,4 +6,4 @@ applications:
   disk_quota: 1G
   stack: cflinuxfs2
   env:
-    GOPACKAGENAME: librdkafka-demo-app-cloudfoundry
+    GOPACKAGENAME: github.com/starkandwayne/librdkafka-demo-app-cloudfoundry
